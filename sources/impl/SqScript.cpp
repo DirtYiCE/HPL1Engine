@@ -49,7 +49,7 @@ namespace hpl {
 
 	cSqScript::~cSqScript()
 	{
-		mpScriptEngine->Discard(msModuleName.c_str());
+		mpScriptEngine->DiscardModule(msModuleName.c_str());
 		mpContext->Release();
 	}
 
@@ -70,14 +70,15 @@ namespace hpl {
 			return false;
 		}
 
-		if(mpScriptEngine->AddScriptSection(msModuleName.c_str(), "main", pCharBuffer, lLength)<0)
+		asIScriptModule *pModule = mpScriptEngine->GetModule(msModuleName.c_str(), asGM_CREATE_IF_NOT_EXISTS);
+		if(pModule->AddScriptSection("main", pCharBuffer, lLength)<0)
 		{
 			Error("Couldn't add script '%s'!\n",asFileName.c_str());
 			hplDeleteArray(pCharBuffer);
 			return false;
 		}
 
-		if(mpScriptEngine->Build(msModuleName.c_str())<0)
+		if(pModule->Build()<0)
 		{
 			Error("Couldn't build script '%s'!\n",asFileName.c_str());
 			Log("------- SCRIPT OUTPUT BEGIN --------------------------\n");
@@ -86,7 +87,7 @@ namespace hpl {
 			Log("------- SCRIPT OUTPUT END ----------------------------\n");
 
 
-			
+
 			hplDeleteArray(pCharBuffer);
 			return false;
 		}
@@ -100,7 +101,8 @@ namespace hpl {
 
 	int cSqScript::GetFuncHandle(const tString& asFunc)
 	{
-		return mpScriptEngine->GetFunctionIDByName(msModuleName.c_str(),asFunc.c_str());
+		return mpScriptEngine->GetModule(msModuleName.c_str(), asGM_CREATE_IF_NOT_EXISTS)->
+			GetFunctionIdByName(asFunc.c_str());
 	}
 
 	//-----------------------------------------------------------------------
@@ -114,7 +116,28 @@ namespace hpl {
 
 	bool cSqScript::Run(const tString& asFuncLine)
 	{
-		mpScriptEngine->ExecuteString(msModuleName.c_str(), asFuncLine.c_str());
+		tString sScript = "void ExecuteString() {" + asFuncLine + ";}";
+		asIScriptModule* pModule = mpScriptEngine->GetModule(msModuleName.c_str(),
+			asGM_CREATE_IF_NOT_EXISTS);
+		asIScriptFunction* pFunction = NULL; // as asserts this to be NULL!
+		if (pModule->CompileFunction("ExecuteString", sScript.c_str(), -1, 0, &pFunction) < 0)
+			return false;
+		asIScriptContext* pContext = mpScriptEngine->CreateContext();
+		if (!pContext)
+		{
+			pFunction->Release();
+			return false;
+		}
+		if (pContext->Prepare(pFunction->GetId()) < 0)
+		{
+			pContext->Release();
+			pFunction->Release();
+			return false;
+		}
+
+		pContext->Execute();
+		pContext->Release();
+		pFunction->Release();
 
 		return true;
 	}
